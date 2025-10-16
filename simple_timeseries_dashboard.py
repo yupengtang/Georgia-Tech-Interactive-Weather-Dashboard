@@ -17,7 +17,7 @@ warnings.filterwarnings('ignore')
 
 # Page configuration
 st.set_page_config(
-    page_title="TFT Weather Dashboard - Specific Dataset",
+    page_title="Georgia Tech Interactive Weather Dashboard",
     page_icon="🌡️",
     layout="wide",
     initial_sidebar_state="expanded"
@@ -26,8 +26,8 @@ st.set_page_config(
 @st.cache_data
 def load_specific_data():
     """Load the specific time series data with caching."""
-    grid_file = "TFT_timeseries_predictions_20251016_055154.csv"
-    station_file = "TFT_timeseries_predictions_20251016_055154_stations.csv"
+    grid_file = "simple_TFT_kriging_predictions.csv"
+    station_file = "TFT_timeseries_predictions_simple_stations.csv"
     
     if not os.path.exists(grid_file):
         st.error(f"Data file not found: {grid_file}")
@@ -179,229 +179,12 @@ def create_time_series_plot(grid_df, longitude, latitude, radius=0.001):
     
     return fig
 
-def create_station_comparison(station_df, station_id=None):
-    """Create station comparison plots."""
-    
-    if station_df is None:
-        st.warning("No station data available")
-        return None
-    
-    # Filter by station if specified
-    if station_id is not None:
-        station_data = station_df[station_df['station_id'] == station_id].copy()
-        title_suffix = f" - Station {station_id}"
-    else:
-        station_data = station_df.copy()
-        title_suffix = " - All Stations"
-    
-    if len(station_data) == 0:
-        st.warning(f"No data found for station {station_id}")
-        return None
-    
-    # Create subplots
-    fig = make_subplots(
-        rows=2, cols=2,
-        subplot_titles=('Temperature: Predicted vs Actual', 'Humidity: Predicted vs Actual',
-                       'Temperature Time Series', 'Humidity Time Series'),
-        specs=[[{"secondary_y": False}, {"secondary_y": False}],
-               [{"secondary_y": False}, {"secondary_y": False}]]
-    )
-    
-    # Temperature predictions vs actual
-    if 'station_actual_temp' in station_data.columns:
-        valid_temp = station_data.dropna(subset=['station_pred_temp', 'station_actual_temp'])
-        if len(valid_temp) > 0:
-            fig.add_trace(
-                go.Scatter(
-                    x=valid_temp['station_actual_temp'],
-                    y=valid_temp['station_pred_temp'],
-                    mode='markers',
-                    name='Temperature',
-                    marker=dict(color='red', size=6, opacity=0.6)
-                ),
-                row=1, col=1
-            )
-            
-            # Add perfect prediction line
-            min_val = valid_temp['station_actual_temp'].min()
-            max_val = valid_temp['station_actual_temp'].max()
-            fig.add_trace(
-                go.Scatter(
-                    x=[min_val, max_val],
-                    y=[min_val, max_val],
-                    mode='lines',
-                    name='Perfect Prediction',
-                    line=dict(color='black', dash='dash')
-                ),
-                row=1, col=1
-            )
-    
-    # Humidity predictions vs actual
-    if 'station_actual_rh' in station_data.columns:
-        valid_rh = station_data.dropna(subset=['station_pred_rh', 'station_actual_rh'])
-        if len(valid_rh) > 0:
-            fig.add_trace(
-                go.Scatter(
-                    x=valid_rh['station_actual_rh'],
-                    y=valid_rh['station_pred_rh'],
-                    mode='markers',
-                    name='Humidity',
-                    marker=dict(color='blue', size=6, opacity=0.6)
-                ),
-                row=1, col=2
-            )
-            
-            # Add perfect prediction line
-            min_val = valid_rh['station_actual_rh'].min()
-            max_val = valid_rh['station_actual_rh'].max()
-            fig.add_trace(
-                go.Scatter(
-                    x=[min_val, max_val],
-                    y=[min_val, max_val],
-                    mode='lines',
-                    name='Perfect Prediction',
-                    line=dict(color='black', dash='dash')
-                ),
-                row=1, col=2
-            )
-    
-    # Time series
-    temp_series = station_data.groupby('datetime')['station_pred_temp'].mean().reset_index()
-    rh_series = station_data.groupby('datetime')['station_pred_rh'].mean().reset_index()
-    
-    fig.add_trace(
-        go.Scatter(
-            x=temp_series['datetime'],
-            y=temp_series['station_pred_temp'],
-            mode='lines',
-            name='Temperature TS',
-            line=dict(color='red', width=2)
-        ),
-        row=2, col=1
-    )
-    
-    fig.add_trace(
-        go.Scatter(
-            x=rh_series['datetime'],
-            y=rh_series['station_pred_rh'],
-            mode='lines',
-            name='Humidity TS',
-            line=dict(color='blue', width=2)
-        ),
-        row=2, col=2
-    )
-    
-    fig.update_layout(
-        height=800,
-        title=f'Station Comparison{title_suffix}',
-        showlegend=False
-    )
-    
-    return fig
-
-def create_heatmap_plot(grid_df, variable):
-    """Create a heatmap-style plot showing spatial distribution."""
-    
-    # Get unique time points
-    time_points = sorted(grid_df['datetime'].unique())
-    
-    # Create a grid for heatmap
-    lon_min, lon_max = grid_df['longitude'].min(), grid_df['longitude'].max()
-    lat_min, lat_max = grid_df['latitude'].min(), grid_df['latitude'].max()
-    
-    # Create regular grid
-    lon_grid = np.linspace(lon_min, lon_max, 50)
-    lat_grid = np.linspace(lat_min, lat_max, 50)
-    
-    # For each time point, create a heatmap
-    fig = go.Figure()
-    
-    # Add frames for animation
-    frames = []
-    for i, time_point in enumerate(time_points):
-        time_data = grid_df[grid_df['datetime'] == time_point]
-        
-        # Create heatmap data
-        heatmap_data = np.zeros((len(lat_grid), len(lon_grid)))
-        
-        for _, row in time_data.iterrows():
-            # Find closest grid point
-            lon_idx = np.argmin(np.abs(lon_grid - row['longitude']))
-            lat_idx = np.argmin(np.abs(lat_grid - row['latitude']))
-            heatmap_data[lat_idx, lon_idx] = row[variable]
-        
-        frame = go.Frame(
-            data=[go.Heatmap(
-                z=heatmap_data,
-                x=lon_grid,
-                y=lat_grid,
-                colorscale='Viridis' if 'Temp' in variable else 'Plasma',
-                showscale=True
-            )],
-            name=str(time_point)
-        )
-        frames.append(frame)
-    
-    # Add initial frame
-    if len(time_points) > 0:
-        initial_data = grid_df[grid_df['datetime'] == time_points[0]]
-        heatmap_data = np.zeros((len(lat_grid), len(lon_grid)))
-        
-        for _, row in initial_data.iterrows():
-            lon_idx = np.argmin(np.abs(lon_grid - row['longitude']))
-            lat_idx = np.argmin(np.abs(lat_grid - row['latitude']))
-            heatmap_data[lat_idx, lon_idx] = row[variable]
-        
-        fig.add_trace(go.Heatmap(
-            z=heatmap_data,
-            x=lon_grid,
-            y=lat_grid,
-            colorscale='Viridis' if 'Temp' in variable else 'Plasma',
-            showscale=True
-        ))
-    
-    fig.frames = frames
-    
-    # Add animation controls
-    fig.update_layout(
-        title=f'{variable.replace("KrigingPrediction_", "")} Heatmap Animation',
-        xaxis_title="Longitude",
-        yaxis_title="Latitude",
-        height=600,
-        updatemenus=[{
-            "buttons": [
-                {
-                    "args": [None, {"frame": {"duration": 500, "redraw": True},
-                                   "fromcurrent": True, "transition": {"duration": 300}}],
-                    "label": "Play",
-                    "method": "animate"
-                },
-                {
-                    "args": [[None], {"frame": {"duration": 0, "redraw": True},
-                                     "mode": "immediate", "transition": {"duration": 0}}],
-                    "label": "Pause",
-                    "method": "animate"
-                }
-            ],
-            "direction": "left",
-            "pad": {"r": 10, "t": 87},
-            "showactive": False,
-            "type": "buttons",
-            "x": 0.1,
-            "xanchor": "right",
-            "y": 0,
-            "yanchor": "top"
-        }]
-    )
-    
-    return fig
 
 def main():
     """Main Streamlit app."""
     
     # Title
-    st.title("🌡️ TFT Weather Dashboard - Specific Dataset")
-    st.markdown("Interactive visualization for TFT_timeseries_predictions_20251016_055154.csv")
+    st.title("Georgia Tech Interactive Weather Dashboard")
     
     # Load data
     with st.spinner("Loading specific dataset..."):
@@ -427,17 +210,28 @@ def main():
     st.sidebar.write(f"**Duration:** {grid_df['datetime'].max() - grid_df['datetime'].min()}")
     
     # Main tabs
-    tab1, tab2, tab3, tab4, tab5 = st.tabs(["🗺️ Spatial Map", "📈 Time Series", "🏢 Station Analysis", "🔥 Heatmap Animation", "📊 Statistics"])
+    tab1, tab2, tab3 = st.tabs(["🗺️ Spatial Map", "📈 Time Series", "📊 Statistics"])
     
     with tab1:
         st.header("Spatial Map Visualization")
         
         # Time selection
         time_points = sorted(grid_df['datetime'].unique())
+        
+        # Find default time (2015-06-01 04:50)
+        default_time = pd.to_datetime('2015-06-01 04:50:00')
+        default_index = 0
+        if default_time in time_points:
+            default_index = time_points.index(default_time)
+        else:
+            # If exact time not found, use the closest one
+            time_diffs = [abs((tp - default_time).total_seconds()) for tp in time_points]
+            default_index = time_diffs.index(min(time_diffs))
+        
         selected_time = st.selectbox(
             "Select Time Point:",
             time_points,
-            index=len(time_points)-1,  # Default to last time point
+            index=default_index,  # Default to 2015-06-01 04:50
             format_func=lambda x: x.strftime("%Y-%m-%d %H:%M")
         )
         
@@ -448,15 +242,11 @@ def main():
             format_func=lambda x: x.replace('KrigingPrediction_', '')
         )
         
-        # Show stations option
-        show_stations = st.checkbox("Show Weather Stations", value=True)
-        
-        # Create and display map
-        if st.button("Generate Map", type="primary"):
-            with st.spinner("Generating map..."):
-                fig = create_spatial_map(grid_df, selected_time, variable, show_stations, station_df)
-                if fig:
-                    st.plotly_chart(fig, use_container_width=True)
+        # Auto-generate map
+        with st.spinner("Generating map..."):
+            fig = create_spatial_map(grid_df, selected_time, variable, True, station_df)
+            if fig:
+                st.plotly_chart(fig, use_container_width=True)
     
     with tab2:
         st.header("Time Series Analysis")
@@ -499,44 +289,6 @@ def main():
                     st.plotly_chart(fig, use_container_width=True)
     
     with tab3:
-        st.header("Station Analysis")
-        
-        if station_df is not None:
-            # Station selection
-            stations = sorted(station_df['station_id'].unique())
-            selected_station = st.selectbox(
-                "Select Station:",
-                ['All Stations'] + stations,
-                index=0
-            )
-            
-            station_id = None if selected_station == 'All Stations' else selected_station
-            
-            if st.button("Generate Station Analysis", type="primary"):
-                with st.spinner("Generating station analysis..."):
-                    fig = create_station_comparison(station_df, station_id)
-                    if fig:
-                        st.plotly_chart(fig, use_container_width=True)
-        else:
-            st.warning("No station data available")
-    
-    with tab4:
-        st.header("Heatmap Animation")
-        
-        variable = st.selectbox(
-            "Select Variable for Animation:",
-            ['KrigingPrediction_Temp', 'KrigingPrediction_RH'],
-            format_func=lambda x: x.replace('KrigingPrediction_', ''),
-            key="heatmap_variable"
-        )
-        
-        if st.button("Generate Heatmap Animation", type="primary"):
-            with st.spinner("Generating heatmap animation..."):
-                fig = create_heatmap_plot(grid_df, variable)
-                if fig:
-                    st.plotly_chart(fig, use_container_width=True)
-    
-    with tab5:
         st.header("Data Statistics")
         
         col1, col2 = st.columns(2)
