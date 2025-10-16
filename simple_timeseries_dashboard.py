@@ -209,6 +209,9 @@ def main():
     st.sidebar.write(f"**End:** {grid_df['datetime'].max().strftime('%Y-%m-%d %H:%M')}")
     st.sidebar.write(f"**Duration:** {grid_df['datetime'].max() - grid_df['datetime'].min()}")
     
+    # Explanation for limited time range
+    st.sidebar.info("**Note:** This is a demonstration version with limited time range due to computational constraints. Generating predictions for the full dataset (4+ months) would create an extremely large file with millions of data points, requiring significant processing time and storage. This version is for presentation purposes only.")
+    
     # Main tabs
     tab1, tab2, tab3 = st.tabs(["🗺️ Spatial Map", "📈 Time Series", "📊 Statistics"])
     
